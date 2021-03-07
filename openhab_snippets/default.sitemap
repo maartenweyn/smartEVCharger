@@ -1,0 +1,44 @@
+sitemap default label="Weyn Butler"
+{
+	
+	Text label="Car" icon="w_electric_car" {
+		Frame label="Car Charging"
+		{						
+			Selection item=CarChargingModus label="Car Chargin Modus" mappings=[0.0="Charger Off", 1.0="Normal Charging", 2.0="Solar Charging", 3.0="Fast Charging", 4.0="Slow Solar Charging", 5.0="Full charged"]	
+		}
+		Frame label="EV Charger" {
+			Text item=EVSE_Status
+			Text item=EVSE_State
+			Text item=EVSE_amp
+			Text item=EVSE_pilot
+			Text item=EVSE_Power
+			Text item=EVSE_kwh
+			Text item=EVSE_LastSession
+			Text item=EVSE_DailyCharged
+			Selection item=EVSE_SetCurrent label="Set Current" mappings=[
+				"6"="6",
+				"8"="8",
+				"10"="10",
+				"12"="12",
+				"14"="14",
+				"16"="16",
+				"18"="18",
+				"20"="20",
+				"25"="25",
+				"30"="30",
+				"32"="32"
+		  	]
+			Switch item=EVSE_OnOff
+			Text item=EVSE_Grid
+		}	
+		Frame label="Nissan Leaf"
+		{
+			Switch item=NissanLeafUpdate_Run
+			Text item=Leaf_date
+			Text item=Leaf_charging_status
+			Text item=Leaf_plugin_state
+			Text item=Leaf_battery_percent 
+			Text item=Leaf_state_of_charge		
+		}
+	}
+}

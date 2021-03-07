@@ -1,0 +1,18 @@
+String  EVSE_State          "EVSE State [MAP(evse_state.map):%s]"  <w_car_charger> (gCar) { channel="mqtt:topic:evse:EVSE_state"}
+String  EVSE_Status         "EVSE Charger status [%s]"  <w_car_charger> (gCar) { channel="mqtt:topic:evse:EVSE_status"}
+Number  EVSE_amp            "EVSE Current [%d mA]"  <w_energy> (gCar,gEnergy) { channel="mqtt:topic:evse:EVSE_amp" }
+Number  EVSE_kwh            "EVSE Energy [%d kWh]"  <w_energy> (gCar,gEnergy) { channel="mqtt:topic:evse:EVSE_kwh" }
+Number  EVSE_pilot          "EVSE Pilot Current [%d A]"  <w_energy> (gCar) { channel="mqtt:topic:evse:EVSE_pilot" }
+Number  EVSE_SetCurrent     "EVSE Set Current [%d]"  <w_energy> (gCar) { channel="mqtt:topic:evse:EVSE_SetCurrent" }
+Switch  EVSE_OnOff          "EVSE On/Off" <w_car_charger> (gCar)
+Number  EVSE_Power          "EVSE Energy Power [%.1f W]" <w_energy> (gCar,gEnergy)
+
+
+Number  EVSE_Grid    "EVSE Set Power Available [%d W]"  <w_energy> (gCar) { channel="mqtt:topic:evse:EVSE_Grid" }
+
+
+Number CarChargingModus     "Car Charging Modus" <w_car_charger> (gCar) 
+
+Number  EVSE_LastSession         "EVSE Last Session Charge [%.1f kW]" <w_energy> (gCar,gEnergy)
+
+Number EVSE_DailyCharged    "EVSE Energy Today [%d kWh]"  <w_energy> (gCar,gEnergy)

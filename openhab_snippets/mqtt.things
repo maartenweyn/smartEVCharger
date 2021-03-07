@@ -1,0 +1,17 @@
+
+Thing mqtt:topic:evse (mqtt:broker:localBroker) {
+    Channels:
+        Type string: EVSE_state              "EVSE State" [ stateTopic="openevse/state"]        
+        Type number: EVSE_amp                "EVSE Current" [ stateTopic="openevse/amp"]      
+        Type number: EVSE_kwh                "EVSE kWH" [ stateTopic="openevse/wh",  transformationPattern="JS:evse_wh.js"]         
+        Type number: EVSE_pilot              "EVSE Pilot Current" [ stateTopic="openevse/pilot"]
+        Type string: EVSE_status             "EVSE Charger status" [ stateTopic="openevse/announce/1365", transformationPattern="JSONPATH:$.state"]
+
+        Type number : EVSE_SetCurrent   "EVSE Set Current" [ commandTopic="openevse/rapi/in/$SC"]
+        Type number : EVSE_LedColor     "EVSE Led Color" [ commandTopic="openevse/rapi/in/$FB"]
+
+        Type number : EVSE_Grid  "EVSE Set Grid Import/Export" [ commandTopic="openevse/solarpvdivert/grid"]
+}
+
+
+

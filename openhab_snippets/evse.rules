@@ -1,0 +1,243 @@
+var long MaxTotalPowerNormalConsumption  = 3200
+var long MaxTotalPowerFastConsumption  = 5000
+var long MaxTotalPowerRapidConsumption  = 7200
+var long voltage = 240
+var Number minCarCurrentStart = 6.0
+var Number minCarCurrentStop = 4.0
+var long slowStartTime = 5 * 60 * 1000 // 5 minutes -> milliseconds 
+var Number currentCurrent = 0.0
+var Number slopefilter = 0.4
+
+var long EVSE_LastUpdate = 0
+
+var long lastOnOffTime = 0
+
+rule "EVSE_OnOff Changes"
+when
+    Item EVSE_OnOff changed
+then
+    val mqttActions = getActions("mqtt","mqtt:broker:localBroker")
+
+    lastOnOffTime = now.millis
+
+    if (EVSE_OnOff.state == ON)
+    { 
+        logInfo("EVSE", "Enable charger, start at 6A")
+        mqttActions.publishMQTT("openevse/rapi/in/$FE","", true)
+        sendCommand(EVSE_SetCurrent, 6)
+    }
+    else 
+    {
+        logInfo("EVSE", "Disable charger")  
+        mqttActions.publishMQTT("openevse/rapi/in/$FD","", true)
+        sendCommand(EVSE_SetCurrent, 6)
+    }
+end
+
+rule "EVSE_amp Changes"
+when
+    Item EVSE_amp changed
+then
+    var Number current = EVSE_amp.state as DecimalType
+    sendCommand(EVSE_Power, current * voltage / 1000.0)
+end
+
+rule "EVSE_Power updated"
+when
+    Item EVSE_Power changed
+then
+    var long currentTime = now.millis
+
+    if (EVSE_LastUpdate != 0) {
+		var Number timeElapsed = (currentTime - EVSE_LastUpdate) / 3600000.0
+		if (timeElapsed > 0) {	
+            var Number power = (EVSE_Power.previousState(true, "influxdb").state as DecimalType)
+            var Number energy = power * timeElapsed
+            sendCommand(EVSE_DailyCharged, EVSE_DailyCharged.state as DecimalType + energy)
+            logInfo("EVSE", "DailyCharged: " + power + "kW * " + (currentTime - EVSE_LastUpdate) + " ms = " +  energy + "kWh -> " + EVSE_DailyCharged.state as DecimalType)  
+        }
+    } 
+
+    EVSE_LastUpdate = currentTime
+end
+
+rule "Power changes check car"
+when   
+    Item Net_Power changed
+then
+    var modus = CarChargingModus.state
+
+    if (modus == 0.0)
+        return
+
+    // Power meter responds faster then the response of EVSE 
+    var Number currentPower = Net_Power.averageSince(now.minusMinutes(1), "influxdb")
+    var Number carPower = EVSE_Power.state as DecimalType
+    //var Number currentPilot = EVSE_pilot.state as DecimalType
+
+    var Number houseconsumption = currentPower - carPower
+    var Number margin = -houseconsumption
+    
+    if (modus == 1.0)
+        margin += MaxTotalPowerNormalConsumption
+    else if (modus == 2.0)
+        margin += 0
+    else if (modus == 3.0)
+        margin += MaxTotalPowerFastConsumption
+    else if (modus == 4.0) { // charge at minimum when there is any solar 
+            if (margin > 0) {
+                if (margin < 6.0 * voltage)
+                    margin = 6.4 * voltage
+            }
+        }
+    
+    var Number current = (margin / voltage)
+
+    current = slopefilter * current + (1.0 - slopefilter) * currentCurrent
+    logInfo("EVSE", "Current/Car/House/margin/old/new: " + currentPower.intValue + " / " + carPower.intValue + " / " + houseconsumption.intValue + " / " + margin.intValue + " / " + currentCurrent + " / " + current);
+
+    if (current < minCarCurrentStop) {   
+        if (EVSE_OnOff.state == ON)
+            if (lastOnOffTime + slowStartTime < now.millis) // do not switch of if it was just switched on
+            {
+                sendCommand(EVSE_OnOff, OFF)
+            }
+    } else {
+        if  ((EVSE_OnOff.state == OFF) && (current > minCarCurrentStart)) {
+            if (lastOnOffTime + slowStartTime < now.millis) // only switch on if it was off for 5 minutes
+            {
+                sendCommand(EVSE_OnOff, ON)
+                sendCommand(EVSE_SetCurrent, 6)
+                currentInt = 6
+                current = 6.0
+            }
+        } else {
+            var Number currentInt = (current).intValue;
+            if (lastOnOffTime + slowStartTime > now.millis) // slow start
+            {
+                currentInt = 6
+                current = 6.0
+                logInfo("EVSE", "slow start at 6 A")
+            }
+
+            //logInfo("EVSE", "Can charge at " + currentInt)
+            if (currentInt < 6)
+                currentInt = 6
+            if (currentInt > 32)
+                currentInt = 32
+        
+
+            if (EVSE_SetCurrent.state != currentInt)
+                sendCommand(EVSE_SetCurrent, currentInt)
+        }
+    }
+
+    currentCurrent = current
+end
+
+rule "EVSE_State changes"
+when   
+    Item EVSE_State changed
+then
+    var state = EVSE_State.state
+    if (state == "1") {
+        sendCommand(CarChargingModus, 0.0)
+    } else if (state == "2")
+    {
+        logInfo("EVSE", "Connected (" + EVSE_State.state + "), previous state: " + EVSE_State.previousState(true, "influxdb").state)
+        if (EVSE_State.previousState(true, "influxdb").state == "3") {
+            sendCommand(CarChargingModus, 5.0)
+        }
+    }
+end
+
+rule "CarChargingModus changes"
+when   
+    Item CarChargingModus changed
+then
+    var modus = CarChargingModus.state
+    if (modus == 0.0) {
+        sendCommand(EVSE_OnOff, OFF)
+    } else if (modus == 5.0) {
+        sendCommand(EVSE_OnOff, OFF)
+        sendCommand(EVSE_Grid, 0)
+        logInfo("EVSE", "Car is charged")
+        sendTelegram("botmaarten", "Car is charged!")
+        sendCommand(EVSE_Grid, 0)
+    } else 
+    {
+        var Number currentPower = Net_Power.state as DecimalType
+        var Number margin =  -currentPower
+
+        if (modus == 1.0)
+            margin += MaxTotalPowerNormalConsumption
+        else if (modus == 2.0)
+            margin += 0
+        else if (modus == 3.0)
+            margin += MaxTotalPowerFastConsumption
+        else if (modus == 4.0) { // charge at minimum when there is any solar 
+            if (margin > 0) {
+                if (margin < 6.0 * voltage)
+                    margin = 6.0 * voltage
+            }
+        }
+        
+
+        // start the first 5 minute at low speed
+        //started_charging = now.millis
+        if (margin >= 6.0 * voltage) {
+            sendCommand(EVSE_OnOff, ON)
+            currentCurrent = 6.0
+        } else {
+            sendCommand(EVSE_OnOff, OFF)
+            currentCurrent = 0.0
+        }
+    }
+end
+
+rule "EVSE_kwh changes"
+when   
+    Item EVSE_kwh changed
+then
+    var Number previous = EVSE_kwh.previousState(true, "influxdb").state
+    var Number current  = EVSE_kwh.state as DecimalType
+    sendCommand(EVSE_LastSession, current - previous)
+end
+
+rule "daily reset EVSE variables"
+when
+	Time cron "0 59 23 * * ? *"
+then
+	sendCommand(EVSE_DailyCharged, 0)
+end
+
+
+rule "EVSE init"
+when
+    System started
+then
+	if (EVSE_Power.state == NULL)
+	{
+        sendCommand(EVSE_Power, 0)
+    }
+
+    if (CarChargingModus.state == NULL)
+    {
+        sendCommand(CarChargingModus, 0.0)
+    }
+
+    if (EVSE_LastSession.state == NULL)
+    {
+        sendCommand(EVSE_LastSession, 0.0)
+    }
+
+    if (EVSE_DailyCharged.state == NULL)
+    {
+        sendCommand(EVSE_DailyCharged, 0.0)
+    }
+
+
+    //sendCommand(EVSE_DailyCharged, 10.0)
+
+    logInfo("EVSE", "EVSE rules loaded")
+end
